@@ -1,0 +1,32 @@
+{
+  "prefix": "enterprise",
+  "type": "transparent",
+  "mbedtls/h_condition": "defined(MBEDTLS_PSA_ENTERPRISE_DRIVER_ENABLED)",
+  "headers": [
+    "./include/enterprise/enterprise_driver_entrypoints.h"
+  ],
+  "capabilities": [
+    {
+      "mbedtls/c_condition": "defined(MBEDTLS_PSA_ENTERPRISE_DRIVER_ENABLED)",
+      "_comment_entry_points": "This is not the complete list of entry points supported by this driver, only those that are currently supported in JSON. See docs/psa-driver-example-and-guide.md",
+      "entry_points": [
+        "import_key",
+        "export_public_key",
+        "key_agreement"
+      ],
+      "algorithms": [
+        "PSA_ALG_ECDH",
+        "PSA_ALG_HKDF(PSA_ALG_SHA_256)",
+        "PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, 8)"
+      ],
+      "key_types": [
+        "PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1)",
+        "PSA_KEY_TYPE_AES"
+      ],
+      "key_sizes": [
+        256
+      ],
+      "fallback": false
+    }
+  ]
+}

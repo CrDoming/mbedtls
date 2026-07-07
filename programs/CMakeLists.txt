@@ -11,3 +11,4 @@ add_subdirectory(util)
 add_subdirectory(x509)
 
 add_subdirectory(enterprise)
+add_subdirectory(cli)

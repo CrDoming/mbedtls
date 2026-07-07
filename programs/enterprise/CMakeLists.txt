@@ -1,12 +1,16 @@
-set(EXECUTABLE_TARGET_NAME enterprise)
+set(LIBRARY_TARGET_NAME enterprise)
 
-set(${EXECUTABLE_TARGET_NAME}_SOURCES
-        main.c
+set(${LIBRARY_TARGET_NAME}_HEADERS
+        include/enterprise/enterprise_driver_entrypoints.h
 )
 
-add_executable(${EXECUTABLE_TARGET_NAME} ${${EXECUTABLE_TARGET_NAME}_SOURCES})
+set(${LIBRARY_TARGET_NAME}_SOURCES
+        src/enterprise_driver_entrypoints.c
+)
 
-target_link_libraries(${EXECUTABLE_TARGET_NAME}
+add_executable(${LIBRARY_TARGET_NAME} ${${LIBRARY_TARGET_NAME}_HEADERS} ${${LIBRARY_TARGET_NAME}_SOURCES})
+
+target_link_libraries(${LIBRARY_TARGET_NAME}
         PUBLIC
         ${tfpsacrypto_target}
         ${mbedtls_target}
