@@ -7,7 +7,7 @@ void CLI_PrintBytes(const uint8_t *pBytes, size_t byteCount);
 
 void CLI_PrintKey(psa_key_id_t keyId);
 
-psa_status_t CLI_CreatePrivateKey(psa_key_id_t keyId, uint8_t *pPrivateKey, size_t privateKeyByteSize);
+psa_status_t CLI_CreatePrivateKey(psa_key_id_t keyId, uint8_t *pPrivateKey, size_t privateKeyByteCount);
 
 psa_status_t CLI_CreateEccPrivateKey(psa_key_id_t keyId);
 
@@ -20,25 +20,26 @@ psa_status_t CLI_GetPublicKey(
 psa_status_t CLI_CreateSharedSecret(
         psa_key_id_t privateKeyId,
         const uint8_t *pPeerPublicKey,
-        size_t peerPublicKeyByteSize,
+        size_t peerPublicKeyByteCount,
         uint8_t *pSharedSecret,
         size_t sharedSecretByteSize,
         size_t *pSharedSecretWrittenByteCount);
 
-psa_status_t CLI_CreateSessionKey(
+psa_status_t CLI_CreateSessionKeyAndSalt(
         psa_key_id_t privateKeyId,
-        const uint8_t *pSalt,
-        size_t saltByteSize,
+        const uint8_t *pInputSalt,
+        size_t inputSaltByteCount,
         const uint8_t *pInfo,
-        size_t infoByteSize,
-        psa_key_id_t sessionKeyId);
+        size_t infoByteCount,
+        psa_key_id_t sessionKeyId,
+        uint64_t *pOutputSalt);
 
 psa_status_t CLI_Encrypt(
         psa_key_id_t keyId,
         uint64_t salt,
         uint32_t counter,
         const uint8_t *pPlaintext,
-        size_t plaintextByteSize,
+        size_t plaintextByteCount,
         uint8_t *pCiphertext,
         size_t ciphertextByteSize,
         size_t *pCiphertextWrittenByteCount,
@@ -51,9 +52,9 @@ psa_status_t CLI_Decrypt(
         uint64_t salt,
         uint32_t counter,
         const uint8_t *pCiphertext,
-        size_t ciphertextByteSize,
+        size_t ciphertextByteCount,
         const uint8_t *pMac,
-        size_t macByteSize,
+        size_t macByteCount,
         uint8_t *pPlaintext,
         size_t plaintextByteSize,
         size_t *pPlaintextWrittenByteCount);
@@ -179,7 +180,7 @@ int main(int argc, char **argv) {
         goto CLEAN_UP;
     }
 
-    uint8_t sessionSalt[16] = {
+    uint8_t sessionInputSalt[16] = {
             // HOST Session Seed
             0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8,
             // SMIB Session Seed
@@ -194,13 +195,15 @@ int main(int argc, char **argv) {
         sessionInfo[i + 3] = hostSharedSecret[i];
     }
 
-    status = CLI_CreateSessionKey(
+    uint64_t sessionOutputSalt = 0;
+    status = CLI_CreateSessionKeyAndSalt(
             masterKeyId,
-            sessionSalt,
-            sizeof(sessionSalt),
+            sessionInputSalt,
+            sizeof(sessionInputSalt),
             sessionInfo,
             sizeof(sessionInfo),
-            sessionKeyId);
+            sessionKeyId,
+            &sessionOutputSalt);
     if (status != PSA_SUCCESS) {
         printf("Failed to create a key with ID %d. Status = %d\n", sessionKeyId, status);
         goto CLEAN_UP;
@@ -208,7 +211,6 @@ int main(int argc, char **argv) {
 
     CLI_PrintKey(sessionKeyId);
 
-    uint64_t salt = 25;
     uint32_t counter = 4;
     uint8_t plaintext[128] = {0};
     uint8_t ciphertext[128] = {0};
@@ -218,7 +220,7 @@ int main(int argc, char **argv) {
     size_t macWrittenByteCount = 0;
     status = CLI_Encrypt(
             sessionKeyId,
-            salt,
+            sessionOutputSalt,
             counter,
             l_Plaintext,
             sizeof(l_Plaintext),
@@ -235,7 +237,7 @@ int main(int argc, char **argv) {
 
     status = CLI_Decrypt(
             sessionKeyId,
-            salt,
+            sessionOutputSalt,
             counter,
             ciphertext,
             ciphertextWrittenByteCount,
@@ -305,17 +307,17 @@ void CLI_PrintKey(psa_key_id_t keyId) {
     printf("\n");
 }
 
-psa_status_t CLI_CreatePrivateKey(psa_key_id_t keyId, uint8_t *pPrivateKey, size_t privateKeyByteSize) {
+psa_status_t CLI_CreatePrivateKey(psa_key_id_t keyId, uint8_t *pPrivateKey, size_t privateKeyByteCount) {
     psa_key_attributes_t keyAttributes = psa_key_attributes_init();
     psa_set_key_id(&keyAttributes, keyId);
     psa_set_key_lifetime(&keyAttributes, PSA_KEY_LIFETIME_PERSISTENT);
     psa_set_key_type(&keyAttributes, PSA_KEY_TYPE_DERIVE);
-    psa_set_key_bits(&keyAttributes, privateKeyByteSize * 8);
+    psa_set_key_bits(&keyAttributes, privateKeyByteCount * 8);
     psa_set_key_usage_flags(&keyAttributes, PSA_KEY_USAGE_EXPORT | PSA_KEY_USAGE_DERIVE);
     psa_set_key_algorithm(&keyAttributes, PSA_ALG_HKDF(PSA_ALG_SHA_256));
 
     psa_key_id_t generatedKeyId = 0;
-    return psa_import_key(&keyAttributes, pPrivateKey, privateKeyByteSize, &generatedKeyId);
+    return psa_import_key(&keyAttributes, pPrivateKey, privateKeyByteCount, &generatedKeyId);
 }
 
 psa_status_t CLI_CreateEccPrivateKey(psa_key_id_t keyId) {
@@ -350,7 +352,7 @@ psa_status_t CLI_GetPublicKey(
 psa_status_t CLI_CreateSharedSecret(
         psa_key_id_t privateKeyId,
         const uint8_t *pPeerPublicKey,
-        size_t peerPublicKeyByteSize,
+        size_t peerPublicKeyByteCount,
         uint8_t *pSharedSecret,
         size_t sharedSecretByteSize,
         size_t *pSharedSecretWrittenByteCount) {
@@ -362,20 +364,21 @@ psa_status_t CLI_CreateSharedSecret(
             PSA_ALG_ECDH,
             privateKeyId,
             pPeerPublicKey,
-            peerPublicKeyByteSize,
+            peerPublicKeyByteCount,
             pSharedSecret,
             sharedSecretByteSize,
             pSharedSecretWrittenByteCount);
 }
 
-psa_status_t CLI_CreateSessionKey(
+psa_status_t CLI_CreateSessionKeyAndSalt(
         psa_key_id_t privateKeyId,
-        const uint8_t *pSalt,
-        size_t saltByteSize,
+        const uint8_t *pInputSalt,
+        size_t inputSaltByteCount,
         const uint8_t *pInfo,
-        size_t infoByteSize,
-        psa_key_id_t sessionKeyId) {
-    if (pSalt == NULL || pInfo == NULL) {
+        size_t infoByteCount,
+        psa_key_id_t sessionKeyId,
+        uint64_t *pOutputSalt) {
+    if (pInputSalt == NULL || pInfo == NULL || pOutputSalt == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -391,8 +394,8 @@ psa_status_t CLI_CreateSessionKey(
     status = psa_key_derivation_input_bytes(
             &operation,
             PSA_KEY_DERIVATION_INPUT_SALT,
-            pSalt,
-            saltByteSize);
+            pInputSalt,
+            inputSaltByteCount);
     if (status != PSA_SUCCESS) {
         printf("Failed to input the salt into the key derivation operation. Status = %d\n", status);
         goto CLEAN_UP;
@@ -411,9 +414,29 @@ psa_status_t CLI_CreateSessionKey(
             &operation,
             PSA_KEY_DERIVATION_INPUT_INFO,
             pInfo,
-            infoByteSize);
+            infoByteCount);
     if (status != PSA_SUCCESS) {
         printf("Failed to input the info into the key derivation operation. Status = %d\n", status);
+        goto CLEAN_UP;
+    }
+
+    uint8_t sessionPrivateKey[32] = {0};
+    status = psa_key_derivation_output_bytes(
+            &operation,
+            sessionPrivateKey,
+            sizeof(sessionPrivateKey));
+    if (status != PSA_SUCCESS) {
+        printf("Failed to output a session private key from the key derivation operation. Status = %d\n", status);
+        goto CLEAN_UP;
+    }
+
+    uint8_t outputSalt[8] = {0};
+    status = psa_key_derivation_output_bytes(
+            &operation,
+            outputSalt,
+            sizeof(outputSalt));
+    if (status != PSA_SUCCESS) {
+        printf("Failed to output a session salt from the key derivation operation. Status = %d\n", status);
         goto CLEAN_UP;
     }
 
@@ -428,11 +451,17 @@ psa_status_t CLI_CreateSessionKey(
     psa_set_key_algorithm(&sessionKeyAttributes, PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_CCM, 8));
 
     psa_key_id_t generatedKeyId = 0;
-    status = psa_key_derivation_output_key(&sessionKeyAttributes, &operation, &generatedKeyId);
+    status = psa_import_key(
+            &sessionKeyAttributes,
+            sessionPrivateKey,
+            sizeof(sessionPrivateKey),
+            &generatedKeyId);
     if (status != PSA_SUCCESS) {
-        printf("Failed to output a session key. Status = %d\n", status);
+        printf("Failed to create a session key via import. Status = %d\n", status);
         goto CLEAN_UP;
     }
+
+    (void) memcpy_s(pOutputSalt, sizeof(uint64_t), outputSalt, sizeof(outputSalt));
 
     CLEAN_UP:
     (void) psa_key_derivation_abort(&operation);
@@ -444,7 +473,7 @@ psa_status_t CLI_Encrypt(
         uint64_t salt,
         uint32_t counter,
         const uint8_t *pPlaintext,
-        size_t plaintextByteSize,
+        size_t plaintextByteCount,
         uint8_t *pCiphertext,
         size_t ciphertextByteSize,
         size_t *pCiphertextWrittenByteCount,
@@ -467,7 +496,7 @@ psa_status_t CLI_Encrypt(
         goto CLEAN_UP;
     }
 
-    status = psa_aead_set_lengths(&operation, 0, plaintextByteSize);
+    status = psa_aead_set_lengths(&operation, 0, plaintextByteCount);
     if (status != PSA_SUCCESS) {
         printf("Failed to set the lengths of the AEAD encryption operation. Status = %d\n", status);
         goto CLEAN_UP;
@@ -497,7 +526,7 @@ psa_status_t CLI_Encrypt(
     status = psa_aead_update(
             &operation,
             pPlaintext,
-            plaintextByteSize,
+            plaintextByteCount,
             pCiphertextItr,
             ciphertextByteSize,
             &ciphertextUpdateByteCount);
@@ -533,9 +562,9 @@ psa_status_t CLI_Decrypt(
         uint64_t salt,
         uint32_t counter,
         const uint8_t *pCiphertext,
-        size_t ciphertextByteSize,
+        size_t ciphertextByteCount,
         const uint8_t *pMac,
-        size_t macByteSize,
+        size_t macByteCount,
         uint8_t *pPlaintext,
         size_t plaintextByteSize,
         size_t *pPlaintextWrittenByteCount) {
@@ -554,7 +583,7 @@ psa_status_t CLI_Decrypt(
         goto CLEAN_UP;
     }
 
-    status = psa_aead_set_lengths(&operation, 0, ciphertextByteSize);
+    status = psa_aead_set_lengths(&operation, 0, ciphertextByteCount);
     if (status != PSA_SUCCESS) {
         printf("Failed to set the lengths of the AEAD decryption operation. Status = %d\n", status);
         goto CLEAN_UP;
@@ -584,7 +613,7 @@ psa_status_t CLI_Decrypt(
     status = psa_aead_update(
             &operation,
             pCiphertext,
-            ciphertextByteSize,
+            ciphertextByteCount,
             pPlaintextItr,
             plaintextByteSize,
             &plaintextUpdateByteCount);
@@ -600,7 +629,7 @@ psa_status_t CLI_Decrypt(
             plaintextByteSize - plaintextUpdateByteCount,
             pPlaintextWrittenByteCount,
             pMac,
-            macByteSize);
+            macByteCount);
     if (status != PSA_SUCCESS) {
         printf("Failed to verify an AEAD decryption operation. Status = %d\n", status);
         goto CLEAN_UP;
